@@ -14,26 +14,6 @@ def mean_confidence_interval(data, confidence=0.95):
     h = se * scipy.stats.t.ppf((1 + confidence) / 2., n-1)
     return m, h
 
-def get_cols_nonnumeric(data, should_print=False):
-    nonnumerical_cols = []
-    for c in data.columns:
-        if data[c].dtype != 'float64' and data[c].dtype != 'int64':
-            nonnumerical_cols.append(c)
-    if should_print:
-        print('{} Non numerical columns: {}'.format(len(nonnumerical_cols), nonnumerical_cols))
-    return nonnumerical_cols
-
-def convert_nonnumeric_to_numeric(data):
-    nonnumerical_cols = get_cols_nonnumeric(data)
-    for c in nonnumerical_cols:
-        data[c] = pd.factorize(data[c])[0]
-
-def normalize_data(data, cols_to_skip):
-    for c in data.columns:
-        if c not in cols_to_skip:
-            data[c] = (data[c] - data[c].mean()) / data[c].std()
-    return data
-
 def r2_loss(output, target):
     with torch.no_grad():
         output = output.flatten()
@@ -77,7 +57,6 @@ def fill_na(data):
 
     data['LotFrontage']=data['LotFrontage'].fillna(data['LotFrontage'].mean())
     
-
 def data_from_csv(should_print = False, should_drop = True, split = 0.9, csv_path = 'data/house-prices-advanced-regression-techniques/train.csv'):
     data = pd.read_csv(csv_path)
     cols_to_drop = ['Id','Street', 'Utilities' , 'LotArea','LandContour','LotConfig','Condition2','Exterior2nd','BsmtHalfBath','HalfBath','Functional','3SsnPorch','PoolArea','PoolQC','MiscVal','SaleType','SaleCondition']
