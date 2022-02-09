@@ -19,7 +19,7 @@ def get_cols_nonnumeric(data, should_print=False):
 def convert_nonnumeric_to_numeric(data):
     nonnumerical_cols = get_cols_nonnumeric(data)
     for c in nonnumerical_cols:
-        data[c] = pd.factorize(data[c])[0]
+        data[c] = pd.factorize(data[c])[0]+1
 
 def normalize_data(data, cols_to_skip):
     for c in data.columns:
@@ -55,9 +55,17 @@ def fill_na(data):
     data['LotFrontage']=data['LotFrontage'].fillna(data['LotFrontage'].mean())
     
 def data_from_csv(should_print = False, should_drop = True, split = 0.9, csv_path = 'data/house-prices-advanced-regression-techniques/train.csv'):
-    data = pd.read_csv(csv_path)
-    cols_to_drop = ['Id',]
-    data.drop(cols_to_drop, axis=1, inplace=True)
+    data1 = pd.read_csv('data/house-prices-advanced-regression-techniques/AmesHousing.csv')
+    data2 = pd.read_csv('data/house-prices-advanced-regression-techniques/train.csv')
+    data1.columns = data1.columns.str.replace(' ', '')
+    data1.columns = data1.columns.str.replace('/', '')
+    data1.drop(['PID', 'Order'], axis=1, inplace=True)
+    data2.drop(['Id'], axis=1, inplace=True)
+
+    data = pd.concat([data1, data2], axis=0)
+    # data = pd.read_csv(csv_path)
+    # cols_to_drop = ['Id',]
+    # data.drop(cols_to_drop, axis=1, inplace=True)
     
     if should_print:
         for c in data.columns:
@@ -109,7 +117,7 @@ def data_from_csv(should_print = False, should_drop = True, split = 0.9, csv_pat
     #data['SalePrice'] = price_col
 
     # Export to csv
-    data.to_csv('data_normalized.csv', index=False)
+    data.to_csv('data_normalized3.csv', index=False)
 
     # train_data = data.sample(frac=split, random_state=0)
 

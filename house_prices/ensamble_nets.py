@@ -10,6 +10,7 @@ import optuna
 import plotly
 import os
 import glob
+from sklearn.manifold import TSNE
 
 def mean_confidence_interval(data, confidence=0.95):
     a = 1.0 * np.array(data)
@@ -33,11 +34,11 @@ class WeightedRMSLELoss(torch.nn.Module):
         
     def forward(self, pred, actual):
         squared_error = torch.pow((torch.log(pred + 1) - torch.log(actual + 1)),2)
-        squared_error = torch.mul(squared_error, self.weights)
+        # squared_error = torch.mul(squared_error, self.weights)
         return torch.sqrt(torch.mean(squared_error))
 
 
-def data_from_csv(split, csv_path='data_normalized.csv'):
+def data_from_csv(split, csv_path='data_pca.csv'):
     data = pd.read_csv(csv_path)
 
     train_data = data.sample(frac=split, random_state=0)
@@ -68,7 +69,7 @@ class EnsambleNet():
         self.nets = []
         self.add_net_to_ensamble()
 
-    def data_from_csv(self, is_director = False, split=0.8, csv_path='data_normalized.csv'):
+    def data_from_csv(self, is_director = False, split=0.8, csv_path='data_pca.csv'):
         train_x, train_y, test_x, test_y = data_from_csv(split, csv_path)
         if is_director:
             predictions_train = []
@@ -87,7 +88,14 @@ class EnsambleNet():
             for i in range(len(predictions_test)):
                 train_x[f'pred_{i}'] = predictions_train[i]
                 test_x[f'pred_{i}'] = predictions_test[i]
-
+        else:
+            mask = self.input_weights['input_weight'] > 1e-5
+            train_index = mask[mask.index.intersection(train_x.index)].index
+            train_x = train_x.loc[train_index]
+            train_y = train_y.loc[train_index]
+            test_index = mask[mask.index.intersection(test_x.index)].index
+            test_x = test_x.loc[test_index]
+            test_y = test_y.loc[test_index]
         return train_x, train_y, test_x, test_y
 
     def train_net(self, params, trial = None, is_director = False):
@@ -107,7 +115,12 @@ class EnsambleNet():
         for i in range(1,layer_cnt):
             layers.append(torch.nn.Linear(layer_sizes[i-1], layer_sizes[i]))
             layers.append(torch.nn.ReLU())
-        layers.append(torch.nn.Linear(layer_sizes[-1], 1))
+        if is_director:
+            # Classification
+            # layers.append(torch.nn.Linear(layer_sizes[-1], len(self.nets)))
+            layers.append(torch.nn.Linear(layer_sizes[-1], 1))
+        else:
+            layers.append(torch.nn.Linear(layer_sizes[-1], 1))
 
         # Initialize net
         nn = torch.nn.Sequential(*layers)
@@ -118,26 +131,74 @@ class EnsambleNet():
         for epoch in range(100):
             losses = []
             train_data, train_y, test_data, test_y = self.data_from_csv(is_director)
+
+            if is_director:
+                pass
+                # Classification
+                # preds = np.array([train_data['pred_' + str(i)].values for i in range(len(self.nets))])
+                # diffs = np.abs(preds - np.array([train_y.values]*len(self.nets)))
+                # train_optimal_choice = np.argmin(diffs, axis=0)
+
+
+                # Temp
+                # coords_for_label = dict()
+                # for net_index in range(len(self.nets)):
+                #     indices_where_net = np.where(train_optimal_choice == net_index)[0]
+                #     x = train_data.iloc[indices_where_net].drop(columns=['pred_' + str(i)for i in range(len(self.nets))]).values
+                #     tsne = TSNE(n_components=2, verbose=1, perplexity=40, n_iter=300)
+                #     tsne_results = tsne.fit_transform(x)
+                #     coords_for_label[net_index] = tsne_results
+
+                # for net_index in range(len(self.nets)):
+                #     x = coords_for_label[net_index][:,0]
+                #     y = coords_for_label[net_index][:,1]
+                #     plt.scatter(x,y, label=f'Net {net_index}')
+                # plt.legend()
+                # plt.show()
+                # Temp
+
+                # Classification
+                # preds = np.array([test_data['pred_' + str(i)].values for i in range(len(self.nets))])
+                # diffs = np.abs(preds - np.array([test_y.values]*len(self.nets)))
+                # test_optimal_choice = np.argmin(diffs, axis=0)
+
             # Select the weights for the selected inputs
             input_weights = self.input_weights.iloc[train_data.index,:]
 
             for i in range(0, train_data.shape[0], batch_size):
                 optimizer.zero_grad()
                 y_pred = nn(torch.tensor(train_data.iloc[i:i+batch_size, :].values, dtype=torch.float32))
-                y_true = torch.tensor(train_y.iloc[i:i+batch_size].values, dtype=torch.float32).reshape(y_pred.shape)
-                weights = torch.tensor(input_weights.iloc[i:i+batch_size].values, dtype=torch.float32).reshape(y_pred.shape)
 
-                if not is_director:
+                
+                if is_director:
+                    # Classification
+                    # criterion = torch.nn.CrossEntropyLoss()
+                    # y_true = torch.tensor(train_optimal_choice[i:i+batch_size], dtype=torch.long)
+                    criterion = RMSLELoss()
+                    y_true = torch.tensor(train_y.iloc[i:i+batch_size].values, dtype=torch.float32).reshape(y_pred.shape)
+                else:
+                    weights = torch.tensor(input_weights.iloc[i:i+batch_size].values, dtype=torch.float32).reshape(y_pred.shape)
                     criterion = WeightedRMSLELoss(weights)
+                    y_true = torch.tensor(train_y.iloc[i:i+batch_size].values, dtype=torch.float32).reshape(y_pred.shape)
 
                 loss = criterion(y_pred,y_true)
                 losses.append(loss.detach().numpy())
                 loss.backward()
                 optimizer.step()
 
-            y_pred = nn(torch.tensor(test_data.values, dtype=torch.float32)).flatten().detach().numpy()
-            y_pred = torch.tensor(y_pred)
-            y_true = torch.tensor(test_y.values, dtype=torch.float32).flatten()
+
+
+            if is_director:
+                # Classification
+                # y_pred = nn(torch.tensor(test_data.values, dtype=torch.float32))
+                # y_true = torch.tensor(test_optimal_choice, dtype=torch.long)
+                y_pred = nn(torch.tensor(test_data.values, dtype=torch.float32)).flatten().detach().numpy()
+                y_pred = torch.tensor(y_pred)
+                y_true = torch.tensor(test_y.values, dtype=torch.float32).flatten()
+            else:
+                y_pred = nn(torch.tensor(test_data.values, dtype=torch.float32)).flatten().detach().numpy()
+                y_pred = torch.tensor(y_pred)
+                y_true = torch.tensor(test_y.values, dtype=torch.float32).flatten()
 
             loss = criterion(y_pred,y_true)
 
@@ -226,20 +287,20 @@ class EnsambleNet():
             os.remove(f)
         study = optuna.create_study(direction="minimize", sampler=optuna.samplers.TPESampler(), pruner=optuna.pruners.HyperbandPruner(
         min_resource=10, max_resource=100, reduction_factor=3))
-        study.optimize(self.objective_actor, n_trials=10)
+        study.optimize(self.objective_actor, n_trials=25)
         with open(f'trained_nets/temp_actor_nets/nn_{study.best_trial.number}.pkl', "rb") as model:
             self.nets.append(pickle.load(model))
         self.train_director()
 
 def main():
 
-    # nets = EnsambleNet()
-    # for _ in range(5):
-    #     print(f'Nonzero weight count: {(nets.input_weights>0).sum()}')
-    #     # plt.hist(nets.input_weights, bins=50)
-    #     # plt.show()
-    #     nets.add_net_to_ensamble()
-    # pickle.dump(nets, open('trained_nets/ensamble_net2.pkl', 'wb+'))
+    nets = EnsambleNet()
+    for _ in range(2):
+        print(f'Nonzero weight count: {(nets.input_weights>1e-5).sum()}')
+        # plt.hist(nets.input_weights, bins=50)
+        # plt.show()
+        nets.add_net_to_ensamble()
+    pickle.dump(nets, open('trained_nets/ensamble_net2.pkl', 'wb+'))
 
     nets = pickle.load(open('trained_nets/ensamble_net2.pkl', 'rb'))
     nets.train_director()

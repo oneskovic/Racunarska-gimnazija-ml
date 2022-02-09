@@ -16,15 +16,6 @@ def mean_confidence_interval(data, confidence=0.95):
     h = se * scipy.stats.t.ppf((1 + confidence) / 2., n-1)
     return m, h
 
-def r2_loss(output, target):
-    with torch.no_grad():
-        output = output.flatten()
-        target_mean = torch.mean(target)
-        ss_tot = torch.sum((target - target_mean) ** 2)
-        ss_res = torch.sum((target - output) ** 2)
-        r2 = 1 - ss_res / ss_tot
-        return r2
-
 class RMSLELoss(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -33,28 +24,7 @@ class RMSLELoss(torch.nn.Module):
     def forward(self, pred, actual):
         return torch.sqrt(self.mse(torch.log(pred + 1), torch.log(actual + 1)))
 
-def dummy_func(x,y):
-    return np.power((x*x + y -11),2) + np.power(x+y*y-7,2)
-
-def dummy_func2(x):
-    d = 0.5
-    m = 0.0
-    return 1.0/(d*np.sqrt(2*np.pi)) * np.exp(-0.5*((x-m)/d)**2)
-
-def data_from_random_gen():
-    a = -5 
-    b = 5
-    n = 1000
-    t = 100
-    dimen = 1
-    train_data = (b - a) * np.random.ranf((n,dimen)) + a
-    train_y = [dummy_func2(x) for x in train_data]
-    test_data = (b - a) * np.random.ranf((t,dimen)) + a
-    test_y = [dummy_func2(x) for x in test_data]
-    
-    return pd.DataFrame(train_data, columns=['x']), pd.DataFrame(train_y, columns=['out']), pd.DataFrame(test_data, columns=['x']), pd.DataFrame(test_y, columns=['out'])
-
-def data_from_csv(split, csv_path='data_normalized.csv'):
+def data_from_csv(split, csv_path='data_normalized3.csv'):
     data = pd.read_csv(csv_path)
 
     train_data = data.sample(frac=split, random_state=0)
@@ -200,11 +170,11 @@ def eval_net(hparams):
 
 def main():
     # Uncomment to optimize hparams
-    # study = optuna.create_study(direction="minimize", sampler=optuna.samplers.TPESampler(), pruner=optuna.pruners.HyperbandPruner(
-    #     min_resource=30, max_resource=100, reduction_factor=3))
-    # study.optimize(objective, n_trials=500)
-    # pickle.dump(study, open('study4.pkl', 'wb+'))
-    # optuna.visualization.plot_parallel_coordinate(study)
+    study = optuna.create_study(direction="minimize", sampler=optuna.samplers.TPESampler(), pruner=optuna.pruners.HyperbandPruner(
+        min_resource=30, max_resource=100, reduction_factor=3))
+    study.optimize(objective, n_trials=250)
+    pickle.dump(study, open('study4.pkl', 'wb+'))
+    optuna.visualization.plot_parallel_coordinate(study)
     
     # Load hparams
     study = pickle.load(open('study4.pkl', 'rb'))

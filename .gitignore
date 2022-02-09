@@ -1,2 +1,6 @@
 
 *.pkl
+*.png
+*.gif
+*.pyc
+house_prices/kaggle.py
