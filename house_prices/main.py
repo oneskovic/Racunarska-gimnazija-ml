@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 import scipy.stats
 import pickle
+from pytorch_forecasting.metrics import MAPE
+
 
 def mean_confidence_interval(data, confidence=0.95):
     a = 1.0 * np.array(data)
@@ -67,41 +69,51 @@ def data_from_random_gen():
 
 def train():
     train_data, train_y, test_data, test_y = data_from_csv(0.8)
-    batch_size = 4
-    learning_rate = 0.005
+    batch_size = 32
+    learning_rate = 0.008
     input_size = train_data.shape[1]
     nn = torch.nn.Sequential(
-        torch.nn.Linear(input_size, 64),
+        torch.nn.Linear(input_size, 256),
         torch.nn.ReLU(),
-        torch.nn.Linear(64, 64),
+        torch.nn.Linear(256, 256),
         torch.nn.ReLU(),
-        torch.nn.Linear(64, 1)
+        torch.nn.Linear(256, 1)
     )
     
     criterion = RMSLELoss()
+    mape = MAPE(reduction='mean')
     optimizer = torch.optim.Adam(nn.parameters(), lr=learning_rate, weight_decay=1e-5)
-    for epoch in range(100):
-        losses = []
-        train_data, train_y, test_data, test_y = data_from_csv(split=0.8)
+    
+    train_data, train_y, test_data, test_y = data_from_csv(split=0.8)
+
+    train_losses = []
+    test_losses = []
+
+    for epoch in range(15):
         for i in range(0, train_data.shape[0], batch_size):
             optimizer.zero_grad()
             y_pred = nn(torch.tensor(train_data.iloc[i:i+batch_size, :].values, dtype=torch.float32))
             y_true = torch.tensor(train_y.iloc[i:i+batch_size].values, dtype=torch.float32).reshape(y_pred.shape)
             loss = criterion(y_pred,y_true)
-            losses.append(loss.detach().numpy())
+            train_losses.append(loss.detach().numpy())
             loss.backward()
             optimizer.step()
 
-        y_pred = nn(torch.tensor(test_data.values, dtype=torch.float32)).flatten().detach().numpy()
-        y_pred = torch.tensor(y_pred)
-        y_true = torch.tensor(test_y.values, dtype=torch.float32).flatten()
+            with torch.no_grad():
 
-        loss = criterion(y_pred,y_true)
-        print('Epoch {}: loss {}'.format(epoch, loss.item()))
-        error = np.abs(y_pred.detach().numpy() - y_true.detach().numpy())
-        #print('R2 score: {}'.format(r2_loss(y_pred, y_true)))
-        m,h = mean_confidence_interval(error)
-        print('0.95 confidence: {} +- {}'.format(m,h))
+                y_pred = nn(torch.tensor(test_data.values, dtype=torch.float32)).flatten().detach().numpy()
+                y_pred = torch.tensor(y_pred)
+                y_true = torch.tensor(test_y.values, dtype=torch.float32).flatten()
+                test_loss = mape.loss(y_pred,y_true).mean()
+                test_losses.append(test_loss.detach().numpy())
+                #error = np.abs(y_pred.detach().numpy() - y_true.detach().numpy())
+                #m,h = mean_confidence_interval(error)
+                #print('0.95 confidence: {} +- {}'.format(m,h))
+
+    #plt.plot(train_losses, label='train loss')
+    plt.plot(test_losses, label='test loss')
+    plt.legend()
+    plt.show()
 
     train_data_df, train_y, test_data, test_y = data_from_csv(split=1.0)
     train_data = torch.tensor(train_data_df.values, dtype=torch.float32)
