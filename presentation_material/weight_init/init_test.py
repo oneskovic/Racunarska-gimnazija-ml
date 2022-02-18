@@ -34,9 +34,11 @@ for i in range(layer_cnt):
     else:
         l = nn.Linear(neuron_cnt,neuron_cnt)
 
-    # torch.nn.init.kaiming_normal_(l.weight)
-    torch.nn.init.normal_(l.weight, mean=0, std=1)
+    #torch.nn.init.kaiming_normal_(l.weight)
     # torch.nn.init.xavier_normal_(l.weight)
+    # torch.nn.init.normal_(l.weight, mean=0, std=1)
+    torch.nn.init.normal_(l.weight, mean=0, std=0.01)
+    
     torch.nn.init.constant_(l.bias, 0)
     layers.append(l)
 
@@ -59,12 +61,13 @@ with torch.no_grad():
     loss_value = loss(y_pred, torch.from_numpy(y).float())
     print(loss_value)
 
-plt.suptitle('Aktivacije neurona po slojevima za Ha inicijalizaciju')
+plt.suptitle('Aktivacije neurona po slojevima za inicijalizaciju po normalnoj raspodeli (m=0, std=0.01)')
 for i in range(len(collectors)):
     plt.subplot(2,5,i+1)
     plt.title(f'Sloj {i}')
-    
-    plt.hist(collectors[i].stats, bins=50, range=(-1,1))
+    plt.ylim(0,50)
+
+    plt.hist(collectors[i].stats, bins=50)
 plt.subplots_adjust(hspace=0.5)
 plt.show()
 

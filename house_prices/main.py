@@ -24,7 +24,7 @@ class RMSLELoss(torch.nn.Module):
     def forward(self, pred, actual):
         return torch.sqrt(self.mse(torch.log(pred + 1), torch.log(actual + 1)))
 
-def data_from_csv(split, csv_path='data_normalized2.csv'):
+def data_from_csv(split, csv_path='train_processed.csv'):
     data = pd.read_csv(csv_path)
 
     train_data = data.sample(frac=split, random_state=0)
@@ -69,15 +69,15 @@ def data_from_random_gen():
 
 def train():
     train_data, train_y, test_data, test_y = data_from_csv(0.8)
-    batch_size = 32
-    learning_rate = 0.008
+    batch_size = 128
+    learning_rate = 0.01
     input_size = train_data.shape[1]
     nn = torch.nn.Sequential(
-        torch.nn.Linear(input_size, 256),
+        torch.nn.Linear(input_size, 100),
         torch.nn.ReLU(),
-        torch.nn.Linear(256, 256),
+        torch.nn.Linear(100, 100),
         torch.nn.ReLU(),
-        torch.nn.Linear(256, 1)
+        torch.nn.Linear(100, 1)
     )
     
     criterion = RMSLELoss()
@@ -89,7 +89,14 @@ def train():
     train_losses = []
     test_losses = []
 
-    for epoch in range(15):
+    for epoch in range(150):
+        # Shuffle training and test set
+        perm = np.random.permutation(train_data.shape[0])
+        train_data = train_data.iloc[perm]
+        train_y = train_y.iloc[perm]
+        perm2 = np.random.permutation(test_data.shape[0])
+        test_data = test_data.iloc[perm2]
+        test_y = test_y.iloc[perm2]
         for i in range(0, train_data.shape[0], batch_size):
             optimizer.zero_grad()
             y_pred = nn(torch.tensor(train_data.iloc[i:i+batch_size, :].values, dtype=torch.float32))
@@ -104,32 +111,37 @@ def train():
                 y_pred = nn(torch.tensor(test_data.values, dtype=torch.float32)).flatten().detach().numpy()
                 y_pred = torch.tensor(y_pred)
                 y_true = torch.tensor(test_y.values, dtype=torch.float32).flatten()
-                test_loss = mape.loss(y_pred,y_true).mean()
+                #test_loss = mape.loss(y_pred,y_true).mean()
+                test_loss = criterion(y_pred,y_true)
+                print(f'Epoch: {epoch}, Iter: {i}, Train Loss: {loss.detach().numpy()}, Test Loss: {test_loss.detach().numpy()}')
                 test_losses.append(test_loss.detach().numpy())
                 #error = np.abs(y_pred.detach().numpy() - y_true.detach().numpy())
                 #m,h = mean_confidence_interval(error)
                 #print('0.95 confidence: {} +- {}'.format(m,h))
 
-    #plt.plot(train_losses, label='train loss')
-    plt.plot(test_losses, label='test loss')
+    plt.plot(train_losses, label='Loss pri treniranju')
+    plt.plot(test_losses, label='Loss pri validaciji')
+    plt.xlabel('Iteracija')
+    plt.ylabel('Vrednost Loss funkcije')
+    print('Min test loss: {}'.format(min(test_losses)))
     plt.legend()
     plt.show()
 
-    train_data_df, train_y, test_data, test_y = data_from_csv(split=1.0)
-    train_data = torch.tensor(train_data_df.values, dtype=torch.float32)
-    train_data.requires_grad = True
-    y_pred = nn(train_data)
+    # train_data_df, train_y, test_data, test_y = data_from_csv(split=1.0)
+    # train_data = torch.tensor(train_data_df.values, dtype=torch.float32)
+    # train_data.requires_grad = True
+    # y_pred = nn(train_data)
 
-    for i in range(0, train_data.shape[0]):
-        y_pred[i].backward(retain_graph=True)
+    # for i in range(0, train_data.shape[0]):
+    #     y_pred[i].backward(retain_graph=True)
     
-    avg_grads = torch.mean(torch.abs(train_data.grad), dim=0).detach().numpy()
-    bars = plt.bar(range(avg_grads.shape[0]), avg_grads)
-    plt.bar_label(container=bars, labels=np.arange(0,len(avg_grads)))
-    plt.show()
+    # avg_grads = torch.mean(torch.abs(train_data.grad), dim=0).detach().numpy()
+    # bars = plt.bar(range(avg_grads.shape[0]), avg_grads)
+    # plt.bar_label(container=bars, labels=np.arange(0,len(avg_grads)))
+    # plt.show()
 
-    cols_where_grad_small = [ train_data_df.columns[i] for i,x in enumerate(avg_grads) if x < 500]
-    return cols_where_grad_small, nn, loss
+    # cols_where_grad_small = [ train_data_df.columns[i] for i,x in enumerate(avg_grads) if x < 500]
+    return None, nn, loss
 
 def main():
     # small_grad_cols_cnt = dict()
@@ -140,10 +152,13 @@ def main():
     # print(small_grad_cols_cnt)   
     _, nn, loss = train()
     
-    # y_pred = nn(test_data)
-    # y_pred = y_pred.detach().numpy()
-    # pred_df = pd.DataFrame(y_pred, columns=['SalePrice'])
-    # pred_df.to_csv('pred.csv')
+    test_data = pd.read_csv('test_processed.csv')
+    test_data = test_data.reset_index(drop=True)
+    y_pred = nn(torch.tensor(test_data.values, dtype=torch.float32))
+    y_pred = y_pred.detach().numpy().flatten()
+    pred_df = pd.DataFrame(y_pred, columns=['SalePrice'])
+    pred_df.index += 1461
+    pred_df.to_csv('pred.csv')
 
 if __name__ == '__main__':
     main()

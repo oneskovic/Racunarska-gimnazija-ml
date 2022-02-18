@@ -4,3 +4,8 @@
 *.gif
 *.pyc
 house_prices/kaggle.py
+pred.csv
+pred.csv
+data_normalized3.csv
+test_processed.csv
+train_processed.csv

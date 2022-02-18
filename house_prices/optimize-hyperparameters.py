@@ -24,7 +24,7 @@ class RMSLELoss(torch.nn.Module):
     def forward(self, pred, actual):
         return torch.sqrt(self.mse(torch.log(pred + 1), torch.log(actual + 1)))
 
-def data_from_csv(split, csv_path='data_normalized3.csv'):
+def data_from_csv(split, csv_path='train_processed.csv'):
     data = pd.read_csv(csv_path)
 
     train_data = data.sample(frac=split, random_state=0)
@@ -50,7 +50,8 @@ def objective(trial):
     input_size = train_data.shape[1]
 
     learning_rate = trial.suggest_loguniform('learning_rate', 1e-5, 1e-1)
-    batch_size = trial.suggest_int('batch_size', 4, 32)
+    weight_decay = trial.suggest_loguniform('weight_decay', 1e-5, 1e-2)
+    batch_size = trial.suggest_int('batch_size', 16, 256)
     layer_cnt = trial.suggest_int('layer_cnt', 1, 10)
     
     layer_sizes = []
@@ -70,18 +71,30 @@ def objective(trial):
     nn = torch.nn.Sequential(*layers)
     
     criterion = RMSLELoss()
-    optimizer = torch.optim.Adam(nn.parameters(), lr=learning_rate, weight_decay=1e-5)
-    for epoch in range(100):
+    optimizer = torch.optim.Adam(nn.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    train_data, train_y, test_data, test_y = data_from_csv(split=0.8)
+    for epoch in range(120):
+        # Shuffle training and test set
+        perm = np.random.permutation(train_data.shape[0])
+        train_data = train_data.iloc[perm]
+        train_y = train_y.iloc[perm]
+        perm2 = np.random.permutation(test_data.shape[0])
+        test_data = test_data.iloc[perm2]
+        test_y = test_y.iloc[perm2]
+
         losses = []
-        train_data, train_y, test_data, test_y = data_from_csv(split=0.8)
-        for i in range(0, train_data.shape[0], batch_size):
+        i= 0
+        while i < train_data.shape[0]:
+            batch_x = train_data[i:min(i+batch_size, train_data.shape[0])]
+            batch_y = train_y[i:min(i+batch_size, train_data.shape[0])]
             optimizer.zero_grad()
-            y_pred = nn(torch.tensor(train_data.iloc[i:i+batch_size, :].values, dtype=torch.float32))
-            y_true = torch.tensor(train_y.iloc[i:i+batch_size].values, dtype=torch.float32).reshape(y_pred.shape)
+            y_pred = nn(torch.tensor(batch_x.values, dtype=torch.float32))
+            y_true = torch.tensor(batch_y.values, dtype=torch.float32).reshape(y_pred.shape)
             loss = criterion(y_pred,y_true)
             losses.append(loss.detach().numpy())
             loss.backward()
             optimizer.step()
+            i += batch_size
 
         y_pred = nn(torch.tensor(test_data.values, dtype=torch.float32)).flatten().detach().numpy()
         y_pred = torch.tensor(y_pred)
@@ -121,7 +134,7 @@ def eval_net(hparams):
     nn = torch.nn.Sequential(*layers)
 
     criterion = RMSLELoss()
-    optimizer = torch.optim.Adam(nn.parameters(), lr=0.005, weight_decay=1e-5)
+    optimizer = torch.optim.Adam(nn.parameters(), lr=learning_rate, weight_decay=1e-4)
     train_losses = []
     val_losses = []
     for epoch in range(100):
@@ -170,20 +183,21 @@ def eval_net(hparams):
 
 def main():
     # Uncomment to optimize hparams
-    study = optuna.create_study(direction="minimize", sampler=optuna.samplers.TPESampler(), pruner=optuna.pruners.HyperbandPruner(
-        min_resource=30, max_resource=100, reduction_factor=3))
-    study.optimize(objective, n_trials=250)
-    pickle.dump(study, open('study4.pkl', 'wb+'))
+    # study = optuna.create_study(direction="minimize", sampler=optuna.samplers.TPESampler(), pruner=optuna.pruners.HyperbandPruner(
+    #     min_resource=30, max_resource=100, reduction_factor=3))
+    study = pickle.load(open('study.pkl', 'rb'))
+    study.optimize(objective, n_trials=500)
+    pickle.dump(study, open('study1.pkl', 'wb+'))
     optuna.visualization.plot_parallel_coordinate(study)
     
     # Load hparams
-    study = pickle.load(open('study4.pkl', 'rb'))
+    study = pickle.load(open('study1.pkl', 'rb'))
     # study.optimize(objective, n_trials=200)
     # pickle.dump(study, open('study.pkl', 'wb+'))
 
     hparams = study.best_params
     print(hparams)
-    nn, loss = eval_net(hparams)
+    #nn, loss = eval_net(hparams)
     trial_scores = np.array([study.trials[i].value if study.trials[i].value is not None else np.inf for i in range(len(study.trials))])
     sorted_indices = np.argsort(trial_scores)
     for i in range(10):
